@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>電聯次數統計儀表板</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        /* 改善行動裝置滾動條體驗 */
+        .custom-scrollbar::-webkit-scrollbar {
+            height: 6px;
+            width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+        /* 表格首欄在橫向捲動時凍結固定 */
+        .sticky-col {
+            position: sticky;
+            left: 0;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans min-h-screen p-3 sm:p-5 lg:p-8 antialiased">
+    <div class="max-w-[1440px] mx-auto space-y-4 sm:space-y-6">
+        
+        <!-- 頂部標題與控制列 -->
+        <header class="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div>
+                <h1 class="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
+                    <span>📞</span> 電聯次數統計儀表板
+                </h1>
+                <p class="text-xs sm:text-sm text-slate-500 mt-1">依試算表 P 欄位紀錄者統計（已排除 Q 欄「本格明水(成)」）</p>
+            </div>
+            <div class="flex items-center justify-between w-full md:w-auto gap-3 pt-2 md:pt-0 border-t md:border-t-0 border-slate-100">
+                <span id="update-time" class="text-xs text-slate-400">載入中...</span>
+                <button id="refresh-btn" onclick="fetchData()" class="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white text-xs sm:text-sm font-medium rounded-xl transition shadow flex items-center gap-1.5">
+                    <span>🔄</span> 重新載入
+                </button>
+            </div>
+        </header>
+
+        <!-- 日期範圍篩選列 (RWD 彈性排版) -->
+        <section class="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
+            <!-- 日期選擇區 -->
+            <div class="flex flex-wrap items-center gap-2.5 sm:gap-3 text-xs sm:text-sm">
+                <span class="font-semibold text-slate-700 whitespace-nowrap">📅 日期範圍：</span>
+                <div class="flex items-center gap-1.5 w-full sm:w-auto">
+                    <input type="date" id="start-date" class="w-full sm:w-auto px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs sm:text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none bg-slate-50">
+                    <span class="text-slate-400">至</span>
+                    <input type="date" id="end-date" class="w-full sm:w-auto px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs sm:text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none bg-slate-50">
+                </div>
+                <div class="flex items-center gap-2 w-full sm:w-auto mt-1 sm:mt-0">
+                    <button onclick="applyDateFilter()" class="flex-1 sm:flex-none px-3.5 py-1.5 bg-slate-800 hover:bg-slate-900 active:scale-95 text-white text-xs sm:text-sm font-medium rounded-lg transition">
+                        套用篩選
+                    </button>
+                    <button onclick="resetDateFilter()" class="flex-1 sm:flex-none px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-600 text-xs sm:text-sm font-medium rounded-lg transition">
+                        清除
+                    </button>
+                </div>
+            </div>
+            <!-- 快捷切換按鈕區 -->
+            <div class="flex items-center flex-wrap gap-1.5 sm:gap-2 text-xs pt-2 lg:pt-0 border-t lg:border-t-0 border-slate-100">
+                <span class="text-slate-400 whitespace-nowrap">快速切換：</span>
+                <button onclick="setQuickRange('2026-all')" class="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 font-medium rounded-md border border-blue-200 transition">2026 年至今</button>
+                <button onclick="setQuickRange('this-month')" class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded-md transition">本月</button>
+                <button onclick="setQuickRange('last-30')" class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded-md transition">近 30 天</button>
+            </div>
+        </section>
+
+        <!-- 關鍵指標卡片 (KPI) -->
+        <section class="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+            <div class="bg-white p-4 sm:p-5 rounded-xl border border-slate-200 shadow-sm flex sm:flex-col justify-between sm:justify-start items-center sm:items-start">
+                <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider">篩選區間電聯總筆數</div>
+                <div id="stat-total-calls" class="text-2xl sm:text-3xl font-extrabold text-blue-600 sm:mt-2">0</div>
+            </div>
+            <div class="bg-white p-4 sm:p-5 rounded-xl border border-slate-200 shadow-sm flex sm:flex-col justify-between sm:justify-start items-center sm:items-start">
+                <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider">區間包含天數</div>
+                <div id="stat-total-days" class="text-2xl sm:text-3xl font-extrabold text-emerald-600 sm:mt-2">0</div>
+            </div>
+            <div class="bg-white p-4 sm:p-5 rounded-xl border border-slate-200 shadow-sm flex sm:flex-col justify-between sm:justify-start items-center sm:items-start">
+                <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider">區間活躍紀錄者數 (P欄)</div>
+                <div id="stat-total-recorders" class="text-2xl sm:text-3xl font-extrabold text-indigo-600 sm:mt-2">0</div>
+            </div>
+        </section>
+
+        <!-- 每月電聯次數統計表 (自適應滾動與凍結首欄) -->
+        <section class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div class="p-4 sm:p-5 border-b border-slate-100 flex flex-col sm:flex-row justify-between sm:items-center gap-1 bg-slate-50/50">
+                <h2 class="text-sm sm:text-base font-semibold text-slate-900">📊 紀錄者 (P欄) × 每月電聯次數統計表</h2>
+                <p class="text-xs text-slate-500">月份由近到遠（左至右）｜僅列出所選區間內有數據之人員</p>
+            </div>
+            <div class="overflow-x-auto custom-scrollbar max-h-[460px]">
+                <table class="min-w-full divide-y divide-slate-200 text-xs sm:text-sm text-left border-separate border-spacing-0">
+                    <thead id="month-table-head" class="bg-slate-100 text-slate-700 font-semibold sticky top-0 z-20"></thead>
+                    <tbody id="month-table-body" class="divide-y divide-slate-100 bg-white">
+                        <tr>
+                            <td colspan="100%" class="text-center py-8 text-slate-400">數據載入中...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- 圖表分析區 (手機單欄 / 平板筆電雙欄) -->
+        <section class="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+            <!-- 趨勢圖 (附帶 日 / 週 / 月 切換按鈕) -->
+            <div class="bg-white p-4 sm:p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col">
+                <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+                    <h2 class="text-sm sm:text-base font-semibold text-slate-800">📈 電聯趨勢分析</h2>
+                    <!-- 統計粒度切換鈕 -->
+                    <div class="inline-flex rounded-lg bg-slate-100 p-0.5 text-xs font-medium">
+                        <button id="granularity-day" onclick="setGranularity('day')" class="px-2.5 py-1 rounded-md bg-white text-blue-600 shadow-sm transition">每日</button>
+                        <button id="granularity-week" onclick="setGranularity('week')" class="px-2.5 py-1 rounded-md text-slate-600 hover:text-slate-900 transition">每週</button>
+                        <button id="granularity-month" onclick="setGranularity('month')" class="px-2.5 py-1 rounded-md text-slate-600 hover:text-slate-900 transition">每月</button>
+                    </div>
+                </div>
+                <div class="relative flex-1 min-h-[260px] sm:min-h-[300px]">
+                    <canvas id="trendChart"></canvas>
+                </div>
+            </div>
+            <!-- 每位紀錄者排行 (支援頂端/內側自適應標籤) -->
+            <div class="bg-white p-4 sm:p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col">
+                <div class="flex items-center justify-between mb-3">
+                    <h2 class="text-sm sm:text-base font-semibold text-slate-800">🏆 各紀錄者電聯次數累計 (篩選區間)</h2>
+                </div>
+                <div class="relative flex-1 min-h-[260px] sm:min-h-[300px]">
+                    <canvas id="recorderChart"></canvas>
+                </div>
+            </div>
+        </section>
+
+        <!-- 每日明細交叉統計報表 -->
+        <section class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div class="p-4 sm:p-5 border-b border-slate-100 flex flex-col sm:flex-row justify-between sm:items-center gap-1 bg-slate-50/50">
+                <h2 class="text-sm sm:text-base font-semibold text-slate-800">📋 篩選區間：每日 × 紀錄者交叉明細表</h2>
+                <p class="text-xs text-slate-500">日期由近到遠（上至下）｜紀錄者依區間總量由多到少（左至右）</p>
+            </div>
+            <div class="overflow-x-auto custom-scrollbar max-h-[500px]">
+                <table class="min-w-full divide-y divide-slate-200 text-xs sm:text-sm text-left border-separate border-spacing-0">
+                    <thead id="table-head" class="bg-slate-100 text-slate-700 font-semibold sticky top-0 z-20"></thead>
+                    <tbody id="table-body" class="divide-y divide-slate-100 bg-white">
+                        <tr>
+                            <td colspan="100%" class="text-center py-8 text-slate-400">數據載入中...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <script>
+        const SHEET_ID = "2PACX-1vT89XIeyzq77eYwwxxzJsOP8K7i6xRkWsa3vdPzIk8KEJsWZJWN9-FqrG8oKQW2nzJFrlaukXjAPawb";
+        const GID = "1858143220";
+
+        // 人員姓名/信箱對照替換表
+        const USER_NAME_ALIAS_MAP = {
+            'liam@proagent.com.tw': '陳建呈',
+            'jackie@proagent.com.tw': '林靖富',
+            'amypeng0617@gmail.com': '彭書亞'
+        };
+
+        function mapUserName(rawName) {
+            if (!rawName) return '';
+            const trimmed = rawName.trim();
+            const lower = trimmed.toLowerCase();
+            return USER_NAME_ALIAS_MAP[lower] || trimmed;
+        }
+
+        function formatNum(num) {
+            if (num === null || num === undefined || num === 0) return '-';
+            return Number(num).toLocaleString('en-US');
+        }
+
+        // 本地日期物件轉 YYYY-MM-DD 字串（避免 UTC 跨日時區偏差）
+        function formatLocalDate(d) {
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
+        function isExcludedProject(projectName) {
+            if (!projectName) return false;
+            const cleaned = projectName.trim().replace(/\s+/g, '').replace(/（/g, '(').replace(/）/g, ')');
+            return cleaned.includes('本格明水(成)') || cleaned === '本格明水(成)';
+        }
+
+        // 取得該日期所屬週的週一（以利每週統計）
+        function getMondayOfWeek(dateStr) {
+            const parts = dateStr.split('-');
+            const d = new Date(parts[0], parseInt(parts[1]) - 1, parts[2]);
+            const day = d.getDay();
+            const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+            d.setDate(diff);
+            return formatLocalDate(d);
+        }
+
+        let rawParsedData = []; 
+        let currentFilteredData = [];
+        let currentGranularity = 'day';
+        let trendChartInstance = null;
+        let recorderChartInstance = null;
+
+        // 自訂長條圖標籤外掛
+        const barLabelsPlugin = {
+            id: 'barLabelsPlugin',
+            afterDatasetsDraw(chart) {
+                const { ctx, data } = chart;
+                const isMobile = window.innerWidth < 640;
+                const fontSize = isMobile ? 10 : 12;
+                ctx.save();
+                ctx.font = `600 ${fontSize}px sans-serif`;
+                ctx.textAlign = 'center';
+
+                chart.getDatasetMeta(0).data.forEach((bar, index) => {
+                    const val = data.datasets[0].data[index];
+                    if (val === undefined || val === null || val === 0) return;
+
+                    const formattedText = Number(val).toLocaleString('en-US');
+                    const barHeight = Math.abs(bar.base - bar.y);
+                    const threshold = isMobile ? 26 : 30;
+
+                    if (barHeight >= threshold) {
+                        ctx.fillStyle = '#FFFFFF';
+                        ctx.textBaseline = 'top';
+                        ctx.fillText(formattedText, bar.x, bar.y + 6);
+                    } else {
+                        ctx.fillStyle = '#4f46e5';
+                        ctx.textBaseline = 'bottom';
+                        ctx.fillText(formattedText, bar.x, bar.y - 4);
+                    }
+                });
+                ctx.restore();
+            }
+        };
+
+        window.addEventListener('DOMContentLoaded', () => {
+            fetchData();
+        });
+
+        function fetchData() {
+            const btn = document.getElementById('refresh-btn');
+            btn.disabled = true;
+            btn.innerText = "⏳ 載入中...";
+
+            const url = `https://docs.google.com/spreadsheets/d/e/${SHEET_ID}/pub?gid=${GID}&single=true&output=csv&t=${Date.now()}`;
+            const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+
+            fetch(proxyUrl)
+                .then(res => {
+                    if (!res.ok) throw new Error("HTTP " + res.status);
+                    return res.text();
+                })
+                .then(csvText => handleCSV(csvText))
+                .catch(err => {
+                    console.warn("代理讀取失敗，嘗試直接讀取:", err);
+                    fetch(url)
+                        .then(r => r.text())
+                        .then(csvText => handleCSV(csvText))
+                        .catch(e => {
+                            btn.disabled = false;
+                            btn.innerText = "⚠️ 載入失敗，點擊重試";
+                            alert("資料讀取失敗，請確認網路連線是否正常。");
+                        });
+                });
+        }
+
+        function handleCSV(csvText) {
+            const btn = document.getElementById('refresh-btn');
+            btn.disabled = false;
+            btn.innerText = "🔄 重新載入";
+            document.getElementById('update-time').innerText = "最後更新: " + new Date().toLocaleTimeString('zh-TW');
+
+            parseCSV(csvText);
+        }
+
+        function parseCSV(text) {
+            const lines = text.trim().split(/\r?\n/).map(l => {
+                const row = [];
+                let inQuotes = false, token = '';
+                for (let i = 0; i < l.length; i++) {
+                    const c = l[i];
+                    if (c === '"') inQuotes = !inQuotes;
+                    else if (c === ',' && !inQuotes) {
+                        row.push(token.trim().replace(/^"|"$/g, ''));
+                        token = '';
+                    } else token += c;
+                }
+                row.push(token.trim().replace(/^"|"$/g, ''));
+                return row;
+            });
+
+            if (lines.length < 2) return;
+
+            const headers = lines[0];
+            const rows = lines.slice(1);
+
+            const dateKeywords = ['日期', '電聯日期', '通話日期', '時間', 'date', 'created_at', '時間戳記'];
+            let dateIdx = headers.findIndex(h => dateKeywords.some(k => h.toLowerCase().includes(k)));
+            if (dateIdx === -1) dateIdx = 0;
+
+            const userIdx = 15;
+            const projectIdx = 16;
+
+            rawParsedData = [];
+
+            rows.forEach(r => {
+                const rawDate = r[dateIdx];
+                let rawUser = (r[userIdx] !== undefined) ? r[userIdx].trim() : '';
+                const rawProject = (r[projectIdx] !== undefined) ? r[projectIdx].trim() : '';
+
+                if (isExcludedProject(rawProject)) return;
+                if (!rawDate || !rawUser || rawUser === '' || rawUser === '-') return;
+
+                rawUser = mapUserName(rawUser);
+
+                const date = normalizeDate(rawDate);
+                if (!date || date === '未註記日期') return;
+
+                const month = date.substring(0, 7);
+                const week = getMondayOfWeek(date);
+
+                rawParsedData.push({ date, month, week, user: rawUser, project: rawProject });
+            });
+
+            setQuickRange('2026-all', false);
+            applyDateFilter();
+        }
+
+        function normalizeDate(rawDate) {
+            if (!rawDate) return null;
+            const str = rawDate.trim().split(' ')[0].replace(/\//g, '-');
+            const parts = str.split('-');
+            if (parts.length === 3) {
+                return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+            }
+            return str;
+        }
+
+        function setGranularity(g) {
+            currentGranularity = g;
+
+            ['day', 'week', 'month'].forEach(type => {
+                const el = document.getElementById(`granularity-${type}`);
+                if (type === g) {
+                    el.className = "px-2.5 py-1 rounded-md bg-white text-blue-600 shadow-sm transition";
+                } else {
+                    el.className = "px-2.5 py-1 rounded-md text-slate-600 hover:text-slate-900 transition";
+                }
+            });
+
+            renderTrendChart();
+        }
+
+        function applyDateFilter() {
+            const start = document.getElementById('start-date').value;
+            const end = document.getElementById('end-date').value;
+
+            currentFilteredData = rawParsedData.filter(d => {
+                if (start && d.date < start) return false;
+                if (end && d.date > end) return false;
+                return true;
+            });
+
+            renderAllViews(currentFilteredData);
+        }
+
+        function resetDateFilter() {
+            document.getElementById('start-date').value = '';
+            document.getElementById('end-date').value = '';
+            currentFilteredData = rawParsedData;
+            renderAllViews(currentFilteredData);
+        }
+
+        // 精確的本地日期範圍設定（修正時區與月份初問題）
+        function setQuickRange(type, triggerApply = true) {
+            const today = new Date();
+
+            if (type === '2026-all') {
+                document.getElementById('start-date').value = '2026-01-01';
+                document.getElementById('end-date').value = formatLocalDate(today);
+            } else if (type === 'this-month') {
+                // 當月 1 號
+                const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+                document.getElementById('start-date').value = formatLocalDate(firstDayOfMonth);
+                document.getElementById('end-date').value = formatLocalDate(today);
+            } else if (type === 'last-30') {
+                const past30 = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 30);
+                document.getElementById('start-date').value = formatLocalDate(past30);
+                document.getElementById('end-date').value = formatLocalDate(today);
+            }
+
+            if (triggerApply) applyDateFilter();
+        }
+
+        function renderAllViews(data) {
+            const dateMap = {};
+            const userTotals = {};
+            const uniqueRecorders = new Set();
+            let totalCalls = data.length;
+
+            data.forEach(item => {
+                uniqueRecorders.add(item.user);
+                if (!dateMap[item.date]) dateMap[item.date] = {};
+                dateMap[item.date][item.user] = (dateMap[item.date][item.user] || 0) + 1;
+
+                userTotals[item.user] = (userTotals[item.user] || 0) + 1;
+            });
+
+            const sortedDatesDesc = Object.keys(dateMap).sort().reverse();
+            const activeRecordersSorted = Array.from(uniqueRecorders).sort((a, b) => (userTotals[b] || 0) - (userTotals[a] || 0));
+
+            // 更新 KPI
+            document.getElementById('stat-total-calls').innerText = totalCalls.toLocaleString('en-US');
+            document.getElementById('stat-total-days').innerText = sortedDatesDesc.length.toLocaleString('en-US');
+            document.getElementById('stat-total-recorders').innerText = activeRecordersSorted.length.toLocaleString('en-US');
+
+            renderMonthlyMatrix(data, activeRecordersSorted, userTotals, totalCalls);
+            renderTrendChart();
+            renderRecorderChart(activeRecordersSorted, userTotals);
+            renderDailyTable(sortedDatesDesc, dateMap, activeRecordersSorted, userTotals, totalCalls);
+        }
+
+        function renderTrendChart() {
+            const isMobile = window.innerWidth < 640;
+            const data = currentFilteredData;
+
+            let groupedTotals = {};
+            let labelPrefix = '';
+
+            if (currentGranularity === 'day') {
+                data.forEach(item => {
+                    groupedTotals[item.date] = (groupedTotals[item.date] || 0) + 1;
+                });
+                labelPrefix = '日電聯';
+            } else if (currentGranularity === 'week') {
+                data.forEach(item => {
+                    const key = `${item.week} 週`;
+                    groupedTotals[key] = (groupedTotals[key] || 0) + 1;
+                });
+                labelPrefix = '週電聯';
+            } else if (currentGranularity === 'month') {
+                data.forEach(item => {
+                    groupedTotals[item.month] = (groupedTotals[item.month] || 0) + 1;
+                });
+                labelPrefix = '月電聯';
+            }
+
+            const sortedLabels = Object.keys(groupedTotals).sort();
+            const chartData = sortedLabels.map(k => groupedTotals[k]);
+
+            const trendCtx = document.getElementById('trendChart').getContext('2d');
+            if (trendChartInstance) trendChartInstance.destroy();
+
+            const gradient = trendCtx.createLinearGradient(0, 0, 0, 300);
+            gradient.addColorStop(0, 'rgba(37, 99, 235, 0.25)');
+            gradient.addColorStop(1, 'rgba(37, 99, 235, 0.00)');
+
+            trendChartInstance = new Chart(trendCtx, {
+                type: 'line',
+                data: {
+                    labels: sortedLabels,
+                    datasets: [{
+                        label: `總電聯次數 (${labelPrefix})`,
+                        data: chartData,
+                        borderColor: '#2563eb',
+                        backgroundColor: gradient,
+                        fill: true,
+                        tension: currentGranularity === 'day' ? 0.2 : 0.3,
+                        borderWidth: 2,
+                        pointRadius: currentGranularity === 'day' ? 0 : (isMobile ? 2.5 : 3.5),
+                        pointHoverRadius: 5,
+                        pointBackgroundColor: '#2563eb',
+                        pointBorderColor: '#ffffff',
+                        pointBorderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false
+                    },
+                    scales: {
+                        x: {
+                            ticks: {
+                                autoSkip: true,
+                                maxTicksLimit: currentGranularity === 'day' ? 14 : (currentGranularity === 'week' ? 12 : 12),
+                                maxRotation: 45,
+                                minRotation: 0,
+                                font: { size: isMobile ? 9 : 11 }
+                            },
+                            grid: { display: false }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                precision: 0,
+                                font: { size: isMobile ? 9 : 11 },
+                                callback: value => value.toLocaleString('en-US')
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: context => ` 電聯次數: ${context.parsed.y.toLocaleString('en-US')} 筆`
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function renderRecorderChart(sortedRecorders, userTotals) {
+            const isMobile = window.innerWidth < 640;
+            const recorderCtx = document.getElementById('recorderChart').getContext('2d');
+            if (recorderChartInstance) recorderChartInstance.destroy();
+
+            recorderChartInstance = new Chart(recorderCtx, {
+                type: 'bar',
+                data: {
+                    labels: sortedRecorders,
+                    datasets: [{
+                        label: '電聯次數',
+                        data: sortedRecorders.map(u => userTotals[u] || 0),
+                        backgroundColor: '#4f46e5',
+                        borderRadius: 4
+                    }]
+                },
+                plugins: [barLabelsPlugin],
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    layout: { padding: { top: 20 } },
+                    scales: {
+                        x: { 
+                            ticks: { 
+                                maxRotation: 45, 
+                                minRotation: 30, 
+                                font: { size: isMobile ? 9 : 11 } 
+                            },
+                            grid: { display: false }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            grace: '12%',
+                            ticks: {
+                                precision: 0,
+                                font: { size: isMobile ? 9 : 11 },
+                                callback: value => value.toLocaleString('en-US')
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: context => ` 累計次數: ${context.parsed.y.toLocaleString('en-US')} 筆`
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function renderMonthlyMatrix(data, sortedRecorders, userGrandTotals, grandTotal) {
+            const head = document.getElementById('month-table-head');
+            const body = document.getElementById('month-table-body');
+
+            if (sortedRecorders.length === 0) {
+                head.innerHTML = '';
+                body.innerHTML = '<tr><td class="text-center py-6 text-slate-400">此篩選區間無電聯紀錄</td></tr>';
+                return;
+            }
+
+            const allMonthsDesc = Array.from(new Set(data.map(d => d.month))).sort().reverse();
+
+            const userMonthMatrix = {};
+            const monthTotals = {};
+
+            sortedRecorders.forEach(u => {
+                userMonthMatrix[u] = {};
+            });
+            allMonthsDesc.forEach(m => monthTotals[m] = 0);
+
+            data.forEach(item => {
+                userMonthMatrix[item.user][item.month] = (userMonthMatrix[item.user][item.month] || 0) + 1;
+                monthTotals[item.month] = (monthTotals[item.month] || 0) + 1;
+            });
+
+            let headHTML = `<tr>
+                <th class="py-2.5 sm:py-3 px-3 sm:px-4 text-slate-700 bg-slate-100 sticky-col border-b border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">紀錄者 (P欄)</th>
+                <th class="py-2.5 sm:py-3 px-3 sm:px-4 text-center bg-indigo-50 font-bold text-indigo-900 border-b border-slate-200">區間累計</th>`;
+            allMonthsDesc.forEach(m => {
+                headHTML += `<th class="py-2.5 sm:py-3 px-3 sm:px-4 text-center border-b border-slate-200 whitespace-nowrap">${m}</th>`;
+            });
+            headHTML += `</tr>`;
+            head.innerHTML = headHTML;
+
+            let bodyHTML = '';
+            sortedRecorders.forEach(user => {
+                bodyHTML += `<tr class="hover:bg-slate-50 transition">
+                    <td class="py-2.5 sm:py-3 px-3 sm:px-4 font-semibold text-slate-900 bg-white sticky-col border-b border-r border-slate-100 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] whitespace-nowrap">${user}</td>
+                    <td class="py-2.5 sm:py-3 px-3 sm:px-4 text-center font-bold bg-indigo-50/40 text-indigo-700 border-b border-slate-100">${formatNum(userGrandTotals[user])}</td>`;
+                allMonthsDesc.forEach(m => {
+                    const count = userMonthMatrix[user][m] || 0;
+                    const cellStyle = count > 0 ? 'text-slate-800 font-medium' : 'text-slate-300';
+                    bodyHTML += `<td class="py-2.5 sm:py-3 px-3 sm:px-4 text-center border-b border-slate-100 ${cellStyle}">${formatNum(count)}</td>`;
+                });
+                bodyHTML += `</tr>`;
+            });
+
+            bodyHTML += `<tr class="bg-slate-100 font-bold text-slate-900 sticky bottom-0 z-10 border-t-2 border-slate-300">
+                <td class="py-2.5 sm:py-3 px-3 sm:px-4 sticky-col bg-slate-100 border-r border-slate-300 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">全體合計</td>
+                <td class="py-2.5 sm:py-3 px-3 sm:px-4 text-center text-indigo-800 text-sm sm:text-base font-extrabold">${formatNum(grandTotal)}</td>`;
+            allMonthsDesc.forEach(m => {
+                bodyHTML += `<td class="py-2.5 sm:py-3 px-3 sm:px-4 text-center text-slate-900">${formatNum(monthTotals[m])}</td>`;
+            });
+            bodyHTML += `</tr>`;
+
+            body.innerHTML = bodyHTML;
+        }
+
+        function renderDailyTable(datesDesc, dateMap, sortedRecorders, userTotals, grandTotal) {
+            const head = document.getElementById('table-head');
+            const body = document.getElementById('table-body');
+
+            if (datesDesc.length === 0 || sortedRecorders.length === 0) {
+                head.innerHTML = '';
+                body.innerHTML = '<tr><td class="text-center py-8 text-slate-400">此篩選區間無電聯紀錄</td></tr>';
+                return;
+            }
+
+            let headHTML = `<tr>
+                <th class="py-2.5 sm:py-3 px-3 sm:px-4 text-slate-700 bg-slate-100 sticky-col border-b border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] whitespace-nowrap">日期</th>
+                <th class="py-2.5 sm:py-3 px-3 sm:px-4 text-center bg-slate-200 font-bold text-slate-900 border-b border-slate-200 whitespace-nowrap">當日合計</th>`;
+            sortedRecorders.forEach(rec => {
+                headHTML += `<th class="py-2.5 sm:py-3 px-3 sm:px-4 text-center bg-slate-100 border-b border-slate-200 whitespace-nowrap">${rec}</th>`;
+            });
+            headHTML += `</tr>`;
+            head.innerHTML = headHTML;
+
+            let bodyHTML = '';
+            datesDesc.forEach(d => {
+                let dayTotal = 0;
+                sortedRecorders.forEach(rec => {
+                    dayTotal += (dateMap[d][rec] || 0);
+                });
+
+                bodyHTML += `<tr class="hover:bg-slate-50/80 transition">
+                    <td class="py-2.5 sm:py-3 px-3 sm:px-4 font-medium text-slate-900 bg-white sticky-col border-b border-r border-slate-100 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] whitespace-nowrap">${d}</td>
+                    <td class="py-2.5 sm:py-3 px-3 sm:px-4 text-center font-bold bg-slate-50 text-blue-600 border-b border-slate-100">${formatNum(dayTotal)}</td>`;
+                sortedRecorders.forEach(rec => {
+                    const count = dateMap[d][rec] || 0;
+                    const cellColor = count > 0 ? 'text-slate-800 font-medium' : 'text-slate-300';
+                    bodyHTML += `<td class="py-2.5 sm:py-3 px-3 sm:px-4 text-center border-b border-slate-100 ${cellColor}">${formatNum(count)}</td>`;
+                });
+                bodyHTML += `</tr>`;
+            });
+
+            bodyHTML += `<tr class="bg-slate-100 font-bold text-slate-900 sticky bottom-0 z-10 border-t-2 border-slate-300">
+                <td class="py-2.5 sm:py-3 px-3 sm:px-4 sticky-col bg-slate-100 border-r border-slate-300 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] whitespace-nowrap">區間總計</td>
+                <td class="py-2.5 sm:py-3 px-3 sm:px-4 text-center text-blue-700 text-sm sm:text-base font-extrabold">${formatNum(grandTotal)}</td>`;
+            sortedRecorders.forEach(rec => {
+                bodyHTML += `<td class="py-3 px-4 text-center text-slate-900">${formatNum(userTotals[rec])}</td>`;
+            });
+            bodyHTML += `</tr>`;
+
+            body.innerHTML = bodyHTML;
+        }
+    </script>
+</body>
+</html>
